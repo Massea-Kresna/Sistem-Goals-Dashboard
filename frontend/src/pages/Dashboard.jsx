@@ -548,7 +548,7 @@ function CreateGoalModal({ onClose, onCreated }) {
                     style={{ colorScheme: "light" }}
                     disabled={loading}
                   >
-                    <option value={currentUser?.email}>👤 Diri Sendiri</option>
+                    <option value={currentUser?.email}>👤 {currentUser?.name || "Diri Sendiri"}</option>
                     {members.map(mem => (
                       <option key={mem.email} value={mem.email}>👤 {mem.name}</option>
                     ))}
@@ -700,7 +700,8 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
   const handleAddMs = () => {
     if (!newMs.trim()) return;
     runAction("add-ms", async () => {
-      let assigneeName = "Diri Sendiri";
+      // Selalu simpan nama asli ke DB agar orang lain bisa membacanya dengan benar
+      let assigneeName = currentUser?.name || currentUser?.email || "Anggota";
       if (data?.goal?.type === "kelompok" && newMsAssigneeEmail !== currentUser?.email) {
         assigneeName = data?.members?.find(m => m.email === newMsAssigneeEmail)?.name || "Anggota Tim";
       }
@@ -738,9 +739,13 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
   const isGroup = goal.type === "kelompok";
 
   // Filter milestone
-  const personalMilestones = milestones.filter(
-    (ms) => !isGroup || ms.assignee_email === currentUser.email || !ms.assignee_email || ms.assignee_email === ""
-  );
+  const isOwner = goal.user_id === currentUser?.id;
+  const personalMilestones = milestones.filter((ms) => {
+    if (!isGroup) return true;
+    const isUnassigned = !ms.assignee_email || ms.assignee_email === "";
+    // Milestone unassigned hanya milik owner goal, bukan semua anggota
+    return ms.assignee_email === currentUser.email || (isUnassigned && isOwner);
+  });
   
   const displayedMilestones = showAllMilestones ? milestones : personalMilestones;
 
@@ -880,9 +885,23 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
                 disabled={isBusy}
               >
                 <option value={currentUser?.email}>👤 Diri Sendiri</option>
-                {members.map(mem => (
-                  <option key={mem.email} value={mem.email}>👤 {mem.name}</option>
-                ))}
+                {/* Tampilkan semua peserta: owner (jika bukan saya) + members (kecuali saya sendiri) */}
+                {(() => {
+                  const allParticipants = [];
+                  // Tambahkan owner jika bukan user yang login
+                  if (goal.owner_email && goal.owner_email !== currentUser?.email) {
+                    allParticipants.push({ email: goal.owner_email, name: goal.owner_name || goal.owner_email });
+                  }
+                  // Tambahkan members, kecuali diri sendiri
+                  members.forEach(mem => {
+                    if (mem.email !== currentUser?.email && !allParticipants.find(p => p.email === mem.email)) {
+                      allParticipants.push({ email: mem.email, name: mem.name });
+                    }
+                  });
+                  return allParticipants.map(p => (
+                    <option key={p.email} value={p.email}>👤 {p.name}</option>
+                  ));
+                })()}
               </select>
             )}
             <input
@@ -911,7 +930,26 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {displayedMilestones.map(ms => {
-            const isMine = !isGroup || ms.assignee_email === currentUser?.email;
+            const msUnassigned = !ms.assignee_email || ms.assignee_email === "";
+            const isMine = !isGroup || ms.assignee_email === currentUser?.email || (msUnassigned && isOwner);
+            // Helper: resolve nama dari email, cari di semua sumber yang tersedia
+            const resolveNameByEmail = (email) => {
+              if (!email) return null;
+              if (email === currentUser?.email) return currentUser?.name || null;
+              const fromMembers = members.find(m => m.email === email);
+              if (fromMembers?.name) return fromMembers.name;
+              if (email === goal.owner_email && goal.owner_name) return goal.owner_name;
+              return null; // tidak ditemukan, akan fallback ke email
+            };
+            const assigneeLabel = (() => {
+              if (!isGroup) return null;
+              if (isMine) return "Diri Sendiri";
+              const isInvalidName = !ms.assignee_name || ms.assignee_name === "Diri Sendiri";
+              const name = isInvalidName
+                ? resolveNameByEmail(ms.assignee_email)
+                : ms.assignee_name;
+              return name || ms.assignee_email || "Anggota Tim";
+            })();
             return (
               <div key={ms.id} className={`milestone-item ${ms.is_done ? "done" : ""}`} style={{
                 border: isMine ? "1px solid rgba(59,130,246,0.12)" : "1px solid rgba(226,232,240,0.4)",
@@ -922,19 +960,12 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
                   onClick={() => handleToggle(ms)}
                   disabled={isBusy}
                   title={ms.is_done ? "Tandai belum selesai" : "Tandai selesai"}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    flexShrink: 0,
+                  style={{ 
+                    width: 22, height: 22, flexShrink: 0,
                     border: ms.is_done ? "2px solid #10b981" : "2px solid #cbd5e1",
-                    borderRadius: 6,
-                    background: ms.is_done ? "#10b981" : "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: isBusy ? "not-allowed" : "pointer",
-                    padding: 0,
-                    transition: "all 0.2s ease"
+                    borderRadius: 6, background: ms.is_done ? "#10b981" : "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: isBusy ? "not-allowed" : "pointer", padding: 0, transition: "all 0.2s ease"
                   }}
                 >
                   {ms.is_done && <Check size={14} strokeWidth={4} color="#fff" />}
@@ -951,7 +982,7 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                     {isGroup && (
                       <span style={{ fontSize: 11, fontWeight: 700, color: isMine ? "var(--accent-primary)" : "#64748b" }}>
-                        👤 {isMine ? "Diri Sendiri" : (ms.assignee_name || "Anggota Tim")}
+                        👤 {assigneeLabel}
                       </span>
                     )}
                     {ms.is_done && (
@@ -1349,7 +1380,8 @@ function TeamView({ goals, activities, onUpdate }) {
     setIsBusy(true);
     setError("");
     try {
-      let assigneeName = "Diri Sendiri";
+      // Selalu simpan nama asli ke DB agar orang lain bisa membacanya dengan benar
+      let assigneeName = currentUser?.name || currentUser?.email || "Anggota";
       if (newMsAssigneeEmail !== currentUser?.email) {
         assigneeName = projectData?.members?.find(m => m.email === newMsAssigneeEmail)?.name || "Anggota Tim";
       }
@@ -1604,7 +1636,11 @@ function TeamView({ goals, activities, onUpdate }) {
   const projectPct = totalMs > 0 ? Math.round((doneMs / totalMs) * 100) : 0;
 
   // Filter personal milestones
-  const myMilestones = milestones.filter(m => m.assignee_email === currentUser?.email || !m.assignee_email || m.assignee_email === '');
+  const isGoalOwner = goal.user_id === currentUser?.id;
+  const myMilestones = milestones.filter(m => {
+    const isUnassigned = !m.assignee_email || m.assignee_email === '';
+    return m.assignee_email === currentUser?.email || (isUnassigned && isGoalOwner);
+  });
   const myTotal = myMilestones.length;
   const myDone = myMilestones.filter(m => m.is_done).length;
   const myPct = myTotal > 0 ? Math.round((myDone / myTotal) * 100) : 0;
@@ -1729,9 +1765,17 @@ function TeamView({ goals, activities, onUpdate }) {
                 style={{ width: 160, padding: "8px 12px", fontSize: 13.5, cursor: "pointer", colorScheme: "light" }}
               >
                 <option value={currentUser?.email}>👤 Diri Sendiri</option>
-                {members.map(m => (
-                  <option key={m.email} value={m.email}>👤 {m.name}</option>
-                ))}
+                {/* Tampilkan pemilik goal jika viewer bukan pemilik */}
+                {goal.user_id !== currentUser?.id && goal.owner_email && (
+                  <option value={goal.owner_email}>👤 {goal.owner_name || goal.owner_email}</option>
+                )}
+                {/* Tampilkan anggota lain, kecuali diri sendiri dan owner (sudah ditampilkan di atas) */}
+                {members
+                  .filter(m => m.email !== currentUser?.email && m.email !== goal.owner_email)
+                  .map(m => (
+                    <option key={m.email} value={m.email}>👤 {m.name}</option>
+                  ))
+                }
               </select>
               <button
                 type="submit"
@@ -1751,8 +1795,24 @@ function TeamView({ goals, activities, onUpdate }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {milestones.map(ms => {
-                  const isMine = ms.assignee_email === currentUser?.email || !ms.assignee_email;
-                  const labelName = isMine ? "Diri Sendiri" : (ms.assignee_name || "Anggota Tim");
+                  // Null assignee = milik pemilik goal (bukan semua orang)
+                  const isUnassigned = !ms.assignee_email || ms.assignee_email === "";
+                  const isOwnerViewing = goal.user_id === currentUser?.id;
+                  const isMine = ms.assignee_email === currentUser?.email ||
+                    (isUnassigned && isOwnerViewing);
+                  const labelName = (() => {
+                    if (isMine) return "Diri Sendiri";
+                    const isInvalidName = !ms.assignee_name || ms.assignee_name === "Diri Sendiri";
+                    if (isInvalidName && ms.assignee_email) {
+                      if (ms.assignee_email === currentUser?.email) return currentUser?.name || "Diri Sendiri";
+                      const fromMembers = members.find(m => m.email === ms.assignee_email);
+                      if (fromMembers?.name) return fromMembers.name;
+                      if (ms.assignee_email === goal.owner_email && goal.owner_name) return goal.owner_name;
+                    }
+                    return (ms.assignee_name && ms.assignee_name !== "Diri Sendiri")
+                      ? ms.assignee_name
+                      : (ms.assignee_email || "Anggota Tim");
+                  })();
                   
                   return (
                     <div
@@ -1769,19 +1829,12 @@ function TeamView({ goals, activities, onUpdate }) {
                         className={`milestone-check ${ms.is_done ? "done" : ""}`}
                         onClick={() => handleToggleMilestone(ms)}
                         disabled={isBusy}
-                        style={{
-                          width: 22,
-                          height: 22,
-                          flexShrink: 0,
+                        style={{ 
+                          width: 22, height: 22, flexShrink: 0,
                           border: ms.is_done ? "2px solid #10b981" : "2px solid #cbd5e1",
-                          borderRadius: 6,
-                          background: ms.is_done ? "#10b981" : "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: isBusy ? "not-allowed" : "pointer",
-                          padding: 0,
-                          transition: "all 0.2s ease"
+                          borderRadius: 6, background: ms.is_done ? "#10b981" : "#fff",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: isBusy ? "not-allowed" : "pointer", padding: 0, transition: "all 0.2s ease"
                         }}
                       >
                         {ms.is_done && <Check size={14} strokeWidth={4} color="#fff" />}
