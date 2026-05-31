@@ -187,6 +187,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // ─── POST /api/goals ──────────────────────────────────────────────────────────
+// ─── POST /api/goals ──────────────────────────────────────────────────────────
 router.post("/", async (req, res) => {
   const {
     title, description, deadline,
@@ -233,7 +234,6 @@ router.post("/", async (req, res) => {
         if (m.name && m.email) {
           const normalizedEmail = m.email.trim().toLowerCase();
 
-          // Cek apakah email ini sudah punya akun
           const userLookup = await pool.query(
             'SELECT id FROM users WHERE email = $1',
             [normalizedEmail]
@@ -290,16 +290,15 @@ router.post("/", async (req, res) => {
       );
 
       // --- INTEGRASI GOOGLE CALENDAR ---
-      // Jika terdapat batas waktu, kirimkan jadwal ke kalender tim di latar belakang
       const eventDetails = {
         summary: cleanTitle,
         description: description || `Prioritas: ${priority} | Tipe: ${type}`,
-        // Setting bawaan: acara di-set jam 08:00 WIB s.d. 10:00 WIB pada hari deadline
         startTime: `${deadline}T08:00:00+07:00`,
         endTime: `${deadline}T10:00:00+07:00`
       };
-      createCalendarEvent(eventDetails); 
-      // ---------------------------------
+      
+      // Di Vercel, baris ini WAJIB menggunakan await agar server tidak mati duluan
+      await createCalendarEvent(eventDetails); 
     }
 
     const descStr = `Anda membuat goal ${type === "kelompok" ? "kelompok" : "individu"} baru: "${cleanTitle}"` +
@@ -308,13 +307,6 @@ router.post("/", async (req, res) => {
       'INSERT INTO activities (user_id, description) VALUES ($1, $2)',
       [req.user.id, descStr]
     );
-
-    res.status(201).json({
-      message: "Goal berhasil dibuat.",
-      goal,
-      milestones: savedMilestones,
-      members: savedMembers,
-    });
 
     // --- INTEGRASI NOTIFIKASI EMAIL SMTP ---
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -335,11 +327,18 @@ router.post("/", async (req, res) => {
             </div>
           `;
           
-          // Menggunakan helper dari utils/mailer.js (berjalan asinkron)
-          sendEmail(user.email, `Goal Baru Dibuat: ${cleanTitle}`, emailTemplate);
+          // Di Vercel, baris ini juga WAJIB menggunakan await
+          await sendEmail(user.email, `Goal Baru Dibuat: ${cleanTitle}`, emailTemplate);
         }
     }
-    // ---------------------------------------
+
+    // RESPONS DIKIRIM DI PALING BAWAH (Setelah semua integrasi selesai dikerjakan)
+    res.status(201).json({
+      message: "Goal berhasil dibuat.",
+      goal,
+      milestones: savedMilestones,
+      members: savedMembers,
+    });
 
   } catch (err) {
     console.error("Gagal membuat goal:", err);
