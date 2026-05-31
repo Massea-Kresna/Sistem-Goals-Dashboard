@@ -2,12 +2,12 @@ require("dotenv").config({ path: require("path").resolve(__dirname, ".env") });
 const express = require("express");
 const cors = require("cors");
 
-const authRoutes = require("./api/auth");
-const goalsRoutes = require("./api/goals");
-const milestonesRoutes = require("./api/milestones");
-const exportRoutes = require("./api/export");
-const activitiesRoutes = require("./api/activities");
-const teamRoutes = require("./api/team");
+const authRoutes = require("./routes/auth");
+const goalsRoutes = require("./routes/goals");
+const milestonesRoutes = require("./routes/milestones");
+const exportRoutes = require("./routes/export");
+const activitiesRoutes = require("./routes/activities");
+const teamRoutes = require("./routes/team");
 
 const app = express();
 
@@ -15,7 +15,7 @@ const app = express();
 app.use(cors({
   origin: [
     "http://localhost:5173", // Mengizinkan akses dari laptop saat development (lokal)
-    "https://nama-aplikasi-frontend-kalian.vercel.app" // GANTI DENGAN URL VERCEL ASLI KALIAN
+    "https://sistem-goals-dashboard.vercel.app" // GANTI DENGAN URL VERCEL ASLI KALIAN
   ],
   credentials: true
 }));
