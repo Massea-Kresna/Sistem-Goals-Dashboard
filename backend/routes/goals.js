@@ -2,6 +2,10 @@ const express = require("express");
 const pool = require("../lib/db");
 const { authMiddleware } = require("../middleware/auth");
 
+// Mengimpor fungsi utilitas Notifikasi Email dan Kalender
+const { sendEmail } = require("../utils/mailer");
+const { createCalendarEvent } = require("../utils/calendar");
+
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -52,6 +56,7 @@ router.get("/", async (req, res) => {
       LEFT JOIN milestones m ON m.goal_id = g.id
 
       -- Gabungkan: goals sendiri ATAU goals yang kita ada di goal_members-nya
+      -- Memastikan Soft Delete ter-filter
       WHERE g.deleted_at IS NULL
         AND (
           g.user_id = $2
@@ -283,6 +288,18 @@ router.post("/", async (req, res) => {
         'INSERT INTO reminders (goal_id, remind_at) VALUES ($1, $2)',
         [goal.id, remindAt.toISOString()]
       );
+
+      // --- INTEGRASI GOOGLE CALENDAR ---
+      // Jika terdapat batas waktu, kirimkan jadwal ke kalender tim di latar belakang
+      const eventDetails = {
+        summary: cleanTitle,
+        description: description || `Prioritas: ${priority} | Tipe: ${type}`,
+        // Setting bawaan: acara di-set jam 08:00 WIB s.d. 10:00 WIB pada hari deadline
+        startTime: `${deadline}T08:00:00+07:00`,
+        endTime: `${deadline}T10:00:00+07:00`
+      };
+      createCalendarEvent(eventDetails); 
+      // ---------------------------------
     }
 
     const descStr = `Anda membuat goal ${type === "kelompok" ? "kelompok" : "individu"} baru: "${cleanTitle}"` +
@@ -299,33 +316,31 @@ router.post("/", async (req, res) => {
       members: savedMembers,
     });
 
-    // Email notification (opsional)
+    // --- INTEGRASI NOTIFIKASI EMAIL SMTP ---
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      setImmediate(async () => {
-        try {
-          const nodemailer = require("nodemailer");
-          const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: parseInt(process.env.SMTP_PORT || "587"),
-            secure: process.env.SMTP_PORT === "465",
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-          });
-          const userResult = await pool.query(
-            'SELECT email, name FROM users WHERE id = $1', [req.user.id]
-          );
-          const user = userResult.rows[0];
-          if (!user) return;
-          await transporter.sendMail({
-            from: `"GoalProgress" <${process.env.SMTP_USER}>`,
-            to: user.email,
-            subject: `Goal Baru Dibuat: ${cleanTitle}`,
-            text: `Halo ${user.name || "Pengguna"},\n\nGoal baru Anda "${cleanTitle}" berhasil dibuat.\n\nTetap semangat!\n\nSalam,\nGoalProgress Team`,
-          });
-        } catch (emailErr) {
-          console.error("Gagal mengirim email:", emailErr.message);
+        const userResult = await pool.query(
+          'SELECT email, name FROM users WHERE id = $1', [req.user.id]
+        );
+        const user = userResult.rows[0];
+
+        if (user) {
+          const emailTemplate = `
+            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+              <h2>Halo, ${user.name || "Pengguna"}!</h2>
+              <p>Goal baru Anda berjudul <strong>"${cleanTitle}"</strong> telah berhasil dibuat.</p>
+              <br>
+              <p>Tetap semangat dan pantau progresnya melalui dashboard Anda.</p>
+              <p>Salam hangat,</p>
+              <p><strong>GoalProgress Team</strong></p>
+            </div>
+          `;
+          
+          // Menggunakan helper dari utils/mailer.js (berjalan asinkron)
+          sendEmail(user.email, `Goal Baru Dibuat: ${cleanTitle}`, emailTemplate);
         }
-      });
     }
+    // ---------------------------------------
+
   } catch (err) {
     console.error("Gagal membuat goal:", err);
     res.status(500).json({ error: "Gagal membuat goal." });
