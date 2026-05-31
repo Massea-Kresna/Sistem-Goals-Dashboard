@@ -1,10 +1,19 @@
 const { google } = require('googleapis');
 
-// Menggunakan Environment Variables di Vercel untuk menyimpan kunci rahasia
+// 1. Ambil Private Key dari Vercel
+let rawPrivateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+
+// 2. Bersihkan tanda kutip ekstra di awal dan akhir (jika Vercel menambahkannya)
+if (rawPrivateKey.startsWith('"') && rawPrivateKey.endsWith('"')) {
+  rawPrivateKey = rawPrivateKey.slice(1, -1);
+}
+
+// 3. Pastikan semua karakter \n benar-benar dibaca sebagai baris baru
+const cleanPrivateKey = rawPrivateKey.replace(/\\n/g, '\n');
+
 const CREDENTIALS = {
   client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  // Di Vercel, private_key yang berisi newline (\n) kadang perlu di-parse
-  private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'), 
+  private_key: cleanPrivateKey,
 };
 
 const calendarId = process.env.GOOGLE_CALENDAR_ID;
@@ -24,7 +33,7 @@ const createCalendarEvent = async (eventDetails) => {
       summary: eventDetails.summary,
       description: eventDetails.description,
       start: {
-        dateTime: eventDetails.startTime, // Format ISO, misal: '2026-11-20T09:00:00+07:00'
+        dateTime: eventDetails.startTime,
         timeZone: 'Asia/Jakarta',
       },
       end: {
@@ -38,9 +47,10 @@ const createCalendarEvent = async (eventDetails) => {
       resource: event,
     });
     
+    console.log('Jadwal berhasil ditambahkan ke kalender!');
     return { success: true, link: response.data.htmlLink };
   } catch (error) {
-    console.error('Gagal membuat event kalender:', error);
+    console.error('Gagal membuat event kalender:', error.message);
     return { success: false, error: error.message };
   }
 };
