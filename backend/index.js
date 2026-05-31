@@ -11,7 +11,16 @@ const teamRoutes = require("./api/team");
 
 const app = express();
 
-app.use(cors());
+// --- PENGATURAN CORS BARU ---
+app.use(cors({
+  origin: [
+    "http://localhost:5173", // Mengizinkan akses dari laptop saat development (lokal)
+    "https://nama-aplikasi-frontend-kalian.vercel.app" // GANTI DENGAN URL VERCEL ASLI KALIAN
+  ],
+  credentials: true
+}));
+// -----------------------------
+
 app.use(express.json());
 
 // Routes
