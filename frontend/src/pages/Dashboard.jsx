@@ -1662,31 +1662,39 @@ function TeamView({ goals, activities, onUpdate }) {
   const myDone = myMilestones.filter(m => m.is_done).length;
   const myPct = myTotal > 0 ? Math.round((myDone / myTotal) * 100) : 0;
 
-  // Compile member specific metrics
+  // 1. Hitung data untuk Pemilik Projek asli
+  const ownerIsMe = goal.owner_email === currentUser?.email;
+  const ownerMilestones = milestones.filter(m => !m.assignee_email || m.assignee_email === "" || m.assignee_email === goal.owner_email);
+  const ownerTotal = ownerMilestones.length;
+  const ownerDone = ownerMilestones.filter(m => m.is_done).length;
+  const ownerPct = ownerTotal > 0 ? Math.round((ownerDone / ownerTotal) * 100) : 0;
+
+  // 2. Gabungkan data Owner dan data Anggota
   const memberMetrics = [
     {
-      name: "Diri Sendiri",
-      email: currentUser?.email,
-      role: "Pembuat Proyek",
-      total: myTotal,
-      done: myDone,
-      progress: myPct,
-      isSelf: true
+      name: ownerIsMe ? "Diri Sendiri" : (goal.owner_name || goal.owner_email || "Pembuat Projek"),
+      email: goal.owner_email,
+      role: "Pembuat Projek",
+      total: ownerTotal,
+      done: ownerDone,
+      progress: ownerPct,
+      isSelf: ownerIsMe
     },
     ...members.map(m => {
+      const isMe = m.email === currentUser?.email;
       const memMilestones = milestones.filter(ms => ms.assignee_email === m.email);
       const memTotal = memMilestones.length;
       const memDone = memMilestones.filter(ms => ms.is_done).length;
       const memProgress = memTotal > 0 ? Math.round((memDone / memTotal) * 100) : 0;
-      
+    
       return {
-        name: m.name,
+        name: isMe ? "Diri Sendiri" : m.name,
         email: m.email,
         role: m.role || "Anggota Tim",
         total: memTotal,
         done: memDone,
         progress: memProgress,
-        isSelf: false,
+        isSelf: isMe,
         id: m.id
       };
     })
@@ -2014,30 +2022,37 @@ function TeamView({ goals, activities, onUpdate }) {
 
             {/* List of project members */}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {/* Creator display */}
-              <div className="member-card" style={{ padding: "8px 12px", border: "1px dashed rgba(59,130,246,0.2)", background: "none" }}>
-                <Avatar name={currentUser?.name || currentUser?.email} size={28} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{currentUser?.name || "Pembuat Projek"}</div>
-                  <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>Pemilik Goal (Diri Sendiri)</div>
+              {/* Creator display (Pemilik Asli) */}
+            <div className="member-card" style={{ padding: "8px 12px", border: "1px dashed rgba(59,130,246,0.2)", background: "none" }}>
+              <Avatar name={goal.owner_name || goal.owner_email || "Pembuat Projek"} size={28} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
+                  {goal.owner_email === currentUser?.email ? "Diri Sendiri" : (goal.owner_name || "Pembuat Projek")}
+                </div>
+                <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
+                  Pemilik Goal {goal.owner_email === currentUser?.email ? "(Diri Sendiri)" : ""}
                 </div>
               </div>
+            </div>
 
-              {members.length === 0 && !showAddMemberForm && (
-                <div style={{ textAlign: "center", padding: "16px 0", color: "var(--text-muted)", fontSize: 12 }}>
-                  Belum ada anggota tim lain di projek ini.
-                </div>
-              )}
+            {members.length === 0 && !showAddMemberForm && (
+              <div style={{ textAlign: "center", padding: "16px 0", color: "var(--text-muted)", fontSize: 12 }}>
+                Belum ada anggota tim lain di projek ini.
+              </div>
+            )}
 
-              {members.map(mem => (
+            {/* Looping Anggota Tim */}
+            {members.map(mem => {
+              const isMe = mem.email === currentUser?.email;
+              return (
                 <div key={mem.id} className="member-card" style={{ padding: "8px 12px" }}>
-                  <Avatar name={mem.name} size={28} />
+                  <Avatar name={isMe ? "Diri Sendiri" : mem.name} size={28} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {mem.name}
+                      {isMe ? "Diri Sendiri" : mem.name}
                     </div>
                     <div style={{ fontSize: 10.5, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {mem.role || "Anggota"}
+                      {mem.role || "Anggota"} {isMe ? "(Diri Sendiri)" : ""}
                     </div>
                   </div>
                   <IconBtn
@@ -2049,7 +2064,8 @@ function TeamView({ goals, activities, onUpdate }) {
                     <Trash2 size={12} />
                   </IconBtn>
                 </div>
-              ))}
+              );
+            })}
             </div>
           </div>
         </div>
