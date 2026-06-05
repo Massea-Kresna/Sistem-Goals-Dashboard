@@ -941,15 +941,32 @@ function GoalDetailView({ goalId, onBack, onUpdate }) {
               if (email === goal.owner_email && goal.owner_name) return goal.owner_name;
               return null; // tidak ditemukan, akan fallback ke email
             };
+            // GANTI MENJADI INI:
             const assigneeLabel = (() => {
               if (!isGroup) return null;
-              if (isMine) return "Diri Sendiri";
-              const isInvalidName = !ms.assignee_name || ms.assignee_name === "Diri Sendiri";
-              const name = isInvalidName
-                ? resolveNameByEmail(ms.assignee_email)
-                : ms.assignee_name;
-              return name || ms.assignee_email || "Anggota Tim";
-            })();
+  
+              // Normalisasi email untuk menghindari bug case-sensitive
+              const currentEmail = currentUser?.email?.toLowerCase().trim();
+              const msEmail = ms.assignee_email?.toLowerCase().trim();
+
+              // 1. Jika ini milik user yang sedang login, SELALU tampilkan "Diri Sendiri"
+              if (msEmail && msEmail === currentEmail) return "Diri Sendiri";
+  
+              // 2. Jika bukan milik user yang login, cari nama aslinya dari data members
+              const memberData = members.find(m => m.email?.toLowerCase().trim() === msEmail);
+              if (memberData?.name) return memberData.name;
+  
+            // 3. Cek apakah ini milik Owner pembuat goal
+              if (msEmail === goal.owner_email?.toLowerCase().trim()) {
+                return goal.owner_name || goal.owner_email;
+              }
+  
+            // 4. Fallback jika nama tidak ditemukan
+            return (ms.assignee_name && ms.assignee_name !== "Diri Sendiri") 
+              ? ms.assignee_name 
+              : (ms.assignee_email || "Anggota Tim");
+          })();
+
             return (
               <div key={ms.id} className={`milestone-item ${ms.is_done ? "done" : ""}`} style={{
                 border: isMine ? "1px solid rgba(59,130,246,0.12)" : "1px solid rgba(226,232,240,0.4)",
@@ -1800,17 +1817,26 @@ function TeamView({ goals, activities, onUpdate }) {
                   const isOwnerViewing = goal.user_id === currentUser?.id;
                   const isMine = ms.assignee_email === currentUser?.email ||
                     (isUnassigned && isOwnerViewing);
+
                   const labelName = (() => {
-                    if (isMine) return "Diri Sendiri";
-                    const isInvalidName = !ms.assignee_name || ms.assignee_name === "Diri Sendiri";
-                    if (isInvalidName && ms.assignee_email) {
-                      if (ms.assignee_email === currentUser?.email) return currentUser?.name || "Diri Sendiri";
-                      const fromMembers = members.find(m => m.email === ms.assignee_email);
-                      if (fromMembers?.name) return fromMembers.name;
-                      if (ms.assignee_email === goal.owner_email && goal.owner_name) return goal.owner_name;
+                    const currentEmail = currentUser?.email?.toLowerCase().trim();
+                    const msEmail = ms.assignee_email?.toLowerCase().trim();
+
+                    // 1. Jika ini milik user yang login
+                    if (msEmail && msEmail === currentEmail) return "Diri Sendiri";
+  
+                    // 2. Cek dari daftar members tim
+                    const memberData = members.find(m => m.email?.toLowerCase().trim() === msEmail);
+                    if (memberData?.name) return memberData.name;
+  
+                    // 3. Cek apakah ini milik Owner
+                    if (msEmail === goal.owner_email?.toLowerCase().trim()) {
+                      return goal.owner_name || goal.owner_email;
                     }
-                    return (ms.assignee_name && ms.assignee_name !== "Diri Sendiri")
-                      ? ms.assignee_name
+
+                    // 4. Fallback default
+                    return (ms.assignee_name && ms.assignee_name !== "Diri Sendiri") 
+                      ? ms.assignee_name 
                       : (ms.assignee_email || "Anggota Tim");
                   })();
                   
